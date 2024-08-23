@@ -1,0 +1,7 @@
+dearpygui
+python-magic
+pillow
+numpy
+requests
+PyOpenAL
+PyOgg
