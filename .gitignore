@@ -1,3 +1,7 @@
 __pycache__
 .venv
 .no
+
+# exported assets
+*.ogg
+*.png
