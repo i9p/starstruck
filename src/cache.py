@@ -11,6 +11,7 @@ class File:
     def __init__(self, path: Path):
         self.path = path
         self.name = path.name
+        self.mtime = datetime.fromtimestamp(os.path.getmtime(self.path)).strftime("%Y-%m-%d %H:%M:%S")
 
         self.type = ''
         self.metadata = {}
@@ -50,9 +51,6 @@ class File:
         except Exception as e:
             print(path.name, f"An error occurred: {e}")
 
-    def mtime_formatted(self):
-        return datetime.fromtimestamp(os.path.getmtime(self.path)).strftime("%Y-%m-%d %H:%M:%S")
-    
     def get_magic(self):
         if self.magic is not None: return self.magic
         self.magic = magic.from_buffer(self.get_data())
