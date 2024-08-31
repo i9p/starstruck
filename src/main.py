@@ -1,8 +1,14 @@
+# ▞▀▖▀▛▘▞▀▖▛▀▖▞▀▖▀▛▘▛▀▖▌ ▌▞▀▖▌ ▌ ▌        ▌            ▞▀▖
+# ▚▄  ▌ ▙▄▌▙▄▘▚▄  ▌ ▙▄▘▌ ▌▌  ▙▞  ▛▀▖▌ ▌ ▞▀▌▞▀▖▞▀▖▞▀▖ ▐▌ ▄▘
+# ▖ ▌ ▌ ▌ ▌▌▚ ▖ ▌ ▌ ▌▚ ▌ ▌▌ ▖▌▝▖ ▌ ▌▚▄▌ ▌ ▌▛▀ ▌ ▖▌ ▌ ▗▖▖ ▌
+# ▝▀  ▘ ▘ ▘▘ ▘▝▀  ▘ ▘ ▘▝▀ ▝▀ ▘ ▘ ▀▀ ▗▄▘ ▝▀▘▝▀▘▝▀ ▝▀  ▝▘▝▀ 
 import os
 import platform
 import sys
 import tempfile
 import logging
+import re
+import shutil
 
 import openal
 import pyogg
@@ -14,10 +20,13 @@ import dearpygui.dearpygui as dpg
 import cache
 from pathlib import Path
 
+VERSION = 1.5
+
 TEXTURE_RESOLUTION = 256
 ASSET_URL = 'https://raw.githubusercontent.com/CroppingFlea479/Fleasion/main/assets.json'
 
-VERSION = 1
+MD5_PATTERN = re.compile(r'^[a-f0-9]{32}$', re.I)
+
 logging.basicConfig(
     level=logging.DEBUG,  # Set the logging level to DEBUG
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',  # Log message format
@@ -48,7 +57,6 @@ cache_files = []
 asset_data = []
 hash_data = {}
 
-
 # ┏━╸┏━┓╻  ╻  ┏┓ ┏━┓┏━╸╻┏ ┏━┓
 # ┃  ┣━┫┃  ┃  ┣┻┓┣━┫┃  ┣┻┓┗━┓
 # ┗━╸╹ ╹┗━╸┗━╸┗━┛╹ ╹┗━╸╹ ╹┗━┛
@@ -66,7 +74,7 @@ def cache_file_callback(sender, app_data, user_data):
     logger.info("currently loading - %s", curr.name)
     dpg.set_item_label("asset_viewer", f"asset viewer: {curr.name}")
     dpg.set_value("status_text", f"currently viewing: {curr.name}")
-    dpg.set_value("asset_text", curr.get_magic())
+    dpg.set_value("asset_magic", curr.get_magic())
 
     dpg.configure_item('audio', show=True if curr.type == "ogg" else False)
     dpg.configure_item('texture', show=True if curr.type == "png" else False)
@@ -117,17 +125,35 @@ def download_fleasion_callback():
     global asset_data
     response = requests.get(ASSET_URL)
     if response.status_code == 200:
+        if asset_data == []:
+            dpg.add_button(label='remove textures', parent="add_mods", user_data=('delete', '\n'.join(response.json()['textures']), ''), callback=add_mod_callback)
+            dpg.add_button(label='default skyboxes', parent="add_mods", user_data=('delete', '\n'.join(response.json()['skyboxes']), ''), callback=add_mod_callback)
         asset_data = response.json()
     else:
         logger.error(f"Failed to retrieve data: {response.status_code}")
     rescan_fleasion_callback()
 
-def audio_play_callback():
-    aud.set_gain(dpg.get_value("audio_volume"))
-    aud.play()
+def clear_cache_callback():
+    for file in os.listdir(CACHE_FOLDER):
+        if MD5_PATTERN.match(file):
+            os.remove(CACHE_FOLDER / file)
+    dpg.configure_item("clearcache_modal", show=False)
 
-def audio_stop_callback():
-    aud.stop()
+def apply_mods_callback():
+    for v in mods_dict.values():
+        if v[1] == 'delete':
+            src = CACHE_FOLDER / 'd625adff6a3d75081d11b3407b0b417c'
+        elif v[1] == 'replace':
+            src = CACHE_FOLDER / v[3]
+        else:
+            continue
+
+        for h in v[2].strip().split('\n'):
+            if MD5_PATTERN.match(h):
+                shutil.copyfile(src, CACHE_FOLDER / h)
+                logger.info(f'{h} has been replaced with {src}')
+
+    dpg.configure_item("applymods_modal", show=False)
 
 # ╻ ╻┏━╸╻  ┏━┓┏━╸┏━┓   ┏━╸╻ ╻┏┓╻┏━╸╺┳╸╻┏━┓┏┓╻┏━┓
 # ┣━┫┣╸ ┃  ┣━┛┣╸ ┣┳┛   ┣╸ ┃ ┃┃┗┫┃   ┃ ┃┃ ┃┃┗┫┗━┓
@@ -168,6 +194,7 @@ def process_element(k, element, parent, path=None):
                 dpg.add_text(element)
     elif isinstance(element, list):
         with dpg.tree_node(label=k + f" ({len(element)} elements)", parent=parent) as t:
+            dpg.add_text(f'list containing {len(element)} hashes')
             with dpg.drag_payload(parent=dpg.last_item(), drag_data='\n'.join(element), payload_type="hash"):
                 dpg.add_text(f"list ({len(element)} hashes)")
             for item in element:
@@ -203,71 +230,76 @@ dpg.create_viewport(title=f'starstruck v{VERSION}', width=1200, height=800)
 # ┏━╸╻ ╻╻   ╻ ╻╻┏┓╻╺┳┓┏━┓╻ ╻┏━┓
 # ┃╺┓┃ ┃┃   ┃╻┃┃┃┗┫ ┃┃┃ ┃┃╻┃┗━┓
 # ┗━┛┗━┛╹   ┗┻┛╹╹ ╹╺┻┛┗━┛┗┻┛┗━┛
-with dpg.window(label="cache list", width=650, height=450, no_close=True):
-    dpg.add_text(f"deco says hello :3 ({len(cache_files)} found)", tag="cachelist_status")
+with dpg.window(label="cache list", width=800, height=500, no_close=True):
+    dpg.add_text(f"LAUNCHING MY TECH LIKE IM FUCKING APPLE BITCH #SAVEPFMOVEMENT ({len(cache_files)} found)", tag="cachelist_status")
     dpg.add_text(str(CACHE_FOLDER), label="cache folder", show_label=True)
 
-    with dpg.collapsing_header(label="assets", default_open=True):
-        _cache_controls_id = dpg.generate_uuid()
-        _cache_table_id = dpg.generate_uuid()
+    _cache_controls_id = dpg.generate_uuid()
+    _cache_table_id = dpg.generate_uuid()
 
-        def rescan_cache_folder_callback():
-            global cache_files
-            global cache_hashlist
-            for tag in dpg.get_item_children(_cache_table_id)[1]:
-                dpg.delete_item(tag)
+    def rescan_cache_folder_callback():
+        global cache_files
+        global cache_hashlist
+        for tag in dpg.get_item_children(_cache_table_id)[1]:
+            dpg.delete_item(tag)
 
-            populate_cache_files()
+        populate_cache_files()
 
-            for f in cache_files:
-                data_list = [f.name, f.mtime, f.type, 'empty' if os.path.getsize(f.path) == 91 else str(os.path.getsize(f.path)), ", ".join(hash_data.get(f.name, ['nodesc']))]
-                with dpg.table_row(filter_key=' '.join(data_list), parent=_cache_table_id):
-                    dpg.add_button(label=f.name, user_data=f, callback=cache_file_callback)
-                    dpg.add_text(f.mtime)
-                    dpg.add_text(f.type)
-                    dpg.add_text(os.path.getsize(f.path))
-                    dpg.add_text(", ".join(hash_data.get(f.name, [])))
+        dpg.set_value("cachelist_status", f"LAUNCHING MY TECH LIKE IM FUCKING APPLE BITCH #SAVEPFMOVEMENT ({len(cache_files)} found)")
 
-        dpg.add_text('-empty to hide empty files, -nodesc to hide files without a description')
-        with dpg.group(horizontal=True, tag=_cache_controls_id):
-            dpg.add_button(label="rescan (SLOW!)", callback=rescan_cache_folder_callback)
-            dpg.add_input_text(label="filter", payload_type="hash", 
-                user_data=_cache_table_id, callback=lambda s, a, u: dpg.set_value(u, dpg.get_value(s)), 
-                drop_callback=lambda s, a: dpg.set_value(s, a))
+        for f in cache_files:
+            data_list = [f.name, f.mtime, f.type, 'empty' if os.path.getsize(f.path) == 91 else str(os.path.getsize(f.path)), ", ".join(hash_data.get(f.name, ['nodesc']))]
+            with dpg.table_row(filter_key=' '.join(data_list), parent=_cache_table_id):
+                dpg.add_button(label=f.name, user_data=f, callback=cache_file_callback)
+                with dpg.drag_payload(parent=dpg.last_item(), drag_data=f.name, payload_type="hash"):
+                    dpg.add_text(f.name)
+                dpg.add_text(f.mtime)
+                dpg.add_text(f.type)
+                dpg.add_text(os.path.getsize(f.path))
+                dpg.add_text(", ".join(hash_data.get(f.name, [])))
 
-        with dpg.table(header_row=True, no_host_extendX=True, delay_search=True, clipper=True,
-                    borders_innerH=True, borders_outerH=True, borders_innerV=True,
-                    borders_outerV=True, context_menu_in_body=True, row_background=True,
-                    policy=dpg.mvTable_SizingFixedFit, height=-1, scrollY=True, tag=_cache_table_id):
+    dpg.add_text('-empty to hide empty files, -nodesc to hide files without a description')
+    with dpg.group(horizontal=True, tag=_cache_controls_id):
+        dpg.add_button(label="rescan (SLOW!)", callback=rescan_cache_folder_callback)
+        dpg.add_input_text(label="filter", payload_type="hash", 
+            user_data=_cache_table_id, callback=lambda s, a, u: dpg.set_value(u, dpg.get_value(s)), 
+            drop_callback=lambda s, a: dpg.set_value(s, a))
 
-            dpg.add_table_column(label="hash", tag="hash_col")
-            dpg.add_table_column(label="last modified", tag="mtime_col")
-            dpg.add_table_column(label="type", tag="type_col")
-            dpg.add_table_column(label="size", tag="size_col")
-            dpg.add_table_column(label="desc", tag="desc_col")
+    with dpg.table(header_row=True, no_host_extendX=True, delay_search=True, clipper=True,
+                borders_innerH=True, borders_outerH=True, borders_innerV=True,
+                borders_outerV=True, context_menu_in_body=True, row_background=True,
+                policy=dpg.mvTable_SizingFixedFit, height=-1, scrollY=True, tag=_cache_table_id):
 
-            for f in cache_files:
-                data_list = [f.name, f.mtime, f.type, 'empty' if os.path.getsize(f.path) == 91 else str(os.path.getsize(f.path)), ", ".join(hash_data.get(f.name, ['nodesc']))]
-                with dpg.table_row(filter_key=' '.join(data_list)):
-                    dpg.add_button(label=f.name, user_data=f, callback=cache_file_callback)
-                    dpg.add_text(f.mtime)
-                    dpg.add_text(f.type)
-                    dpg.add_text(os.path.getsize(f.path))
-                    dpg.add_text(", ".join(hash_data.get(f.name, [])))
+        dpg.add_table_column(label="hash", tag="hash_col")
+        dpg.add_table_column(label="last modified", tag="mtime_col")
+        dpg.add_table_column(label="type", tag="type_col")
+        dpg.add_table_column(label="size", tag="size_col")
+        dpg.add_table_column(label="desc", tag="desc_col")
+
+        for f in cache_files:
+            data_list = [f.name, f.mtime, f.type, 'empty' if os.path.getsize(f.path) == 91 else str(os.path.getsize(f.path)), ", ".join(hash_data.get(f.name, ['nodesc']))]
+            with dpg.table_row(filter_key=' '.join(data_list)):
+                dpg.add_button(label=f.name, user_data=f, callback=cache_file_callback)
+                with dpg.drag_payload(parent=dpg.last_item(), drag_data=f.name, payload_type="hash"):
+                    dpg.add_text(f.name)
+                dpg.add_text(f.mtime)
+                dpg.add_text(f.type)
+                dpg.add_text(os.path.getsize(f.path))
+                dpg.add_text(", ".join(hash_data.get(f.name, [])))
 
 with dpg.window(label="asset viewer: <none>", tag="asset_viewer", height=-1, width=200, no_close=True, no_resize=True):
     dpg.add_text("currently viewing: <none>", tag="status_text", payload_type="hash", drop_callback=cache_file_drop_callback)
 
     with dpg.group(tag="audio", show=False):
-        dpg.add_slider_float(label='volume', min_value=0, max_value=1, clamped=True, default_value=1, tag="audio_volume")
+        dpg.add_slider_float(label='volume', callback=lambda s, a: aud.set_gain(a), min_value=0, max_value=1, clamped=True, default_value=1, tag="audio_volume")
         with dpg.group(horizontal=True):
-            dpg.add_button(label="play", callback=audio_play_callback)
-            dpg.add_button(label="stop", callback=audio_stop_callback)
+            dpg.add_button(label="play", callback=lambda x: aud.play())
+            dpg.add_button(label="stop", callback=lambda x: aud.stop())
             dpg.add_text("duration", tag="audio_duration")
     with dpg.group(tag="texture", show=False):
         dpg.add_image("__asset_tex")
 
-    dpg.add_text("magic", tag="asset_text")
+    dpg.add_text("magic", tag="asset_magic")
 
     with dpg.collapsing_header(label="exporting", default_open=True):
         dpg.add_input_text(label='filename', tag="export_filename")
@@ -281,12 +313,16 @@ with dpg.window(label="fleasion asset library UNSCANNED", tag="fleasion_asset_li
 
 mods_dict = {}
 
-def update_mods_left(_, app_data, user_data):
-    mods_dict[user_data][0] = app_data 
+def update_mods(_, app_data, user_data):
+    mods_dict[user_data[0]][user_data[1]] = app_data 
     print(mods_dict)
-def update_mods_right(_, app_data, user_data):
-    mods_dict[user_data][1] = app_data 
-    print(mods_dict)
+
+def drop_update_callback(s, a):
+    user_data = dpg.get_item_user_data(s)
+    if user_data[1] == 2: value = dpg.get_value(s) + a + '\n'
+    elif user_data[1] == 3: value = a
+    dpg.set_value(s, value)
+    update_mods(s, value, dpg.get_item_user_data(s))
 
 def remove_mod_callback(_, app_data, user_data):
     del mods_dict[user_data]
@@ -294,27 +330,74 @@ def remove_mod_callback(_, app_data, user_data):
 
 def add_mod_callback(_, app_data, user_data):
     tag = dpg.generate_uuid()
-    mods_dict[tag] = ['', '']
+    tag2 = dpg.generate_uuid()
+    mods_dict[tag] = [tag2, user_data[0], user_data[1], user_data[2]]
     with dpg.group(horizontal=True, tag=tag, parent="mods_group"):
-        dpg.add_input_text(callback=update_mods_left, user_data=tag, hexadecimal=True, width=240, payload_type="hash", drop_callback=lambda s, a: dpg.set_value(s, a))
-        dpg.add_text('->')
-        dpg.add_input_text(callback=update_mods_right, user_data=tag, multiline=True, width=244, height=30, payload_type="hash", drop_callback=lambda s, a: dpg.set_value(s, a))
-        dpg.add_button(label='X', callback=remove_mod_callback, user_data=tag)
+        if user_data[0] == 'replace':
+            with dpg.group(horizontal=True, xoffset=60):
+                dpg.add_text('replace', tag=tag2)
+                dpg.add_input_text(default_value=user_data[1], callback=update_mods, user_data=(tag, 2), multiline=True, width=244, height=30, payload_type="hash", drop_callback=drop_update_callback)
+            with dpg.group(horizontal=True, xoffset=35):
+                dpg.add_text('with')
+                dpg.add_input_text(default_value=user_data[2], callback=update_mods, user_data=(tag, 3), hexadecimal=True, width=240, payload_type="hash", drop_callback=drop_update_callback)
+        elif user_data[0] == 'delete':
+            with dpg.group(horizontal=True, xoffset=60):
+                dpg.add_text('delete', tag=tag2)
+                dpg.add_input_text(default_value=user_data[1], callback=update_mods, user_data=(tag, 2), multiline=True, width=527, height=30, payload_type="hash", drop_callback=drop_update_callback)
+        dpg.add_button(label=' X ', callback=remove_mod_callback, user_data=tag)
 
-with dpg.window(label="the modificationator", width=555, height=300, no_close=True):
+def validate_mods_callback():
+    regex_valid = True
+    for k, v in mods_dict.items():
+        hashes = v[2].strip().split('\n')
+        if v[3] != '': hashes.append(v[3])
+
+        re_valid = True
+        file_valid = True
+        for h in hashes:
+            if not MD5_PATTERN.match(h): re_valid = False
+            elif not os.path.isfile(CACHE_FOLDER / h):
+                file_valid = False
+
+        if not re_valid:
+            # red, because you are doing something wrong
+            regex_valid = False
+            dpg.configure_item(v[0], color=(255, 0, 0))
+        elif not file_valid:
+            # yellow, because its okay if a file you are replacing doesnt exist
+            dpg.configure_item(v[0], color=(255, 255, 0))
+        else:
+            dpg.configure_item(v[0], color=(0, 255, 0))
+    
+    return regex_valid
+
+with dpg.window(label="the modificationator", width=650, height=300, no_close=True):
     with dpg.collapsing_header(label="modifications", default_open=True):
-        dpg.add_button(label="add modification", callback=add_mod_callback)
+        with dpg.group(horizontal=True, tag="add_mods"):
+            dpg.add_button(label="add replacement", user_data=('replace', '', ''), callback=add_mod_callback)
+            dpg.add_button(label="add removal", user_data=('delete', '', ''), callback=add_mod_callback)
         with dpg.group(tag="mods_group"):
-            add_mod_callback(None, None, None)
-
-        with dpg.group(horizontal=True):
-            dpg.add_checkbox(label="no textures")
-            dpg.add_checkbox(label="default skyboxes")
+            add_mod_callback(None, None, ('replace', '', ''))
 
     with dpg.collapsing_header(label="controls", default_open=True):
         with dpg.group(horizontal=True):
             dpg.add_button(label="clear cache")
-            dpg.add_button(label="apply modifications")
+            with dpg.popup(dpg.last_item(), modal=True, mousebutton=dpg.mvMouseButton_Left, tag="clearcache_modal"):
+                dpg.add_text("Are you sure you want to delete everything in cache?")
+                dpg.add_separator()
+                with dpg.group(horizontal=True):
+                    dpg.add_button(label="OK", width=75, callback=clear_cache_callback)
+                    dpg.add_button(label="Cancel", width=75, callback=lambda: dpg.configure_item("clearcache_modal", show=False))
+
+            dpg.add_button(label="apply mods", callback=apply_mods_callback)
+            with dpg.popup(dpg.last_item(), modal=True, mousebutton=dpg.mvMouseButton_Left, tag="applymods_modal"):
+                dpg.add_text("Are you sure you want to apply changes?")
+                dpg.add_separator()
+                with dpg.group(horizontal=True):
+                    dpg.add_button(label="OK", width=75, callback=apply_mods_callback)
+                    dpg.add_button(label="Cancel", width=75, callback=lambda: dpg.configure_item("applymods_modal", show=False))
+
+            dpg.add_button(label="validate mods", callback=validate_mods_callback)
 
 dpg.setup_dearpygui()
 dpg.show_viewport()
