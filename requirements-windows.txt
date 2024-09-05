@@ -1,0 +1,2 @@
+# libmagic binaries for windows
+python-magic-bin

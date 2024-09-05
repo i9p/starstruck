@@ -3,6 +3,7 @@
 # ▖ ▌ ▌ ▌ ▌▌▚ ▖ ▌ ▌ ▌▚ ▌ ▌▌ ▖▌▝▖ ▌ ▌▚▄▌ ▌ ▌▛▀ ▌ ▖▌ ▌ ▗▖▖ ▌
 # ▝▀  ▘ ▘ ▘▘ ▘▝▀  ▘ ▘ ▘▝▀ ▝▀ ▘ ▘ ▀▀ ▗▄▘ ▝▀▘▝▀▘▝▀ ▝▀  ▝▘▝▀ 
 import os
+import io
 import platform
 import sys
 import tempfile
@@ -11,16 +12,19 @@ import re
 import shutil
 
 import openal
+import pygame.mixer as m
 import pyogg
+import magic
 import numpy as np
 import requests
 from PIL import Image
 import dearpygui.dearpygui as dpg
 
-import cache
+from mutagen.oggvorbis import OggVorbis
+from datetime import datetime
 from pathlib import Path
 
-VERSION = 1.5
+VERSION = 1.6
 
 TEXTURE_RESOLUTION = 256
 ASSET_URL = 'https://raw.githubusercontent.com/CroppingFlea479/Fleasion/main/assets.json'
@@ -34,8 +38,10 @@ logging.basicConfig(
 
 logger = logging.getLogger()
 
+m.init()
+
+aud_buffer = None
 aud = None
-aud_path = os.path.join(tempfile.gettempdir(), "starstruck_audio.ogg")
 
 os_name = platform.system()
 
@@ -57,17 +63,75 @@ cache_files = []
 asset_data = []
 hash_data = {}
 
+class File:
+    def __init__(self, path: Path):
+        self.path = path
+        self.name = path.name
+        self.mtime = datetime.fromtimestamp(os.path.getmtime(self.path)).strftime("%Y-%m-%d %H:%M:%S")
+
+        self.type = ''
+        self.metadata = {}
+
+        self.data_pos = None
+        self.data = None
+        self.magic = None
+
+        try:
+            with open(self.path, 'rb') as file:
+                for line_number in range(256):
+                    tell = file.tell()
+                    line = file.readline()
+                    if line_number == 0:
+                        continue
+                    if not line:
+                        break
+                    if b': ' in line:
+                        l = line.decode('utf-8', errors='ignore').replace('\n', '').replace('\r', '').split(": ")
+                        self.metadata[l[0]] = l[1]
+                    else:
+                        self.data_pos = tell
+                        header = line[:12]
+                        if header.startswith(b'\x89PNG\r\n'):
+                            self.type = 'png'
+                        elif header.startswith(b'\xabKTX 11\xbb\r\n'):
+                            self.type = 'ktx2'
+                        elif header.startswith(b'<roblox!'):
+                            self.type = 'rbxl'
+                        elif header.startswith(b'OggS'):
+                            self.type = 'ogg'
+                        elif header.startswith(b'version '):
+                            self.type = 'v' + str(header).split()[1][:-1]
+                        break
+        except FileNotFoundError:
+            print(f"The file {self.path} was not found.")
+        except Exception as e:
+            print(path.name, f"An error occurred: {e}")
+
+    def get_magic(self):
+        if self.magic is not None: return self.magic
+        self.magic = magic.from_buffer(self.get_data())
+        return self.magic
+    
+    def get_data(self):
+        if self.data is not None: return self.data.getvalue()
+        if self.data_pos is None: return False
+
+        with open(self.path, 'rb') as file:
+            file.seek(self.data_pos)
+            self.data = io.BytesIO(file.read())
+            return self.data.getvalue()
+
 # ┏━╸┏━┓╻  ╻  ┏┓ ┏━┓┏━╸╻┏ ┏━┓
 # ┃  ┣━┫┃  ┃  ┣┻┓┣━┫┃  ┣┻┓┗━┓
 # ┗━╸╹ ╹┗━╸┗━╸┗━┛╹ ╹┗━╸╹ ╹┗━┛
 def cache_file_drop_callback(sender, app_data):
     if os.path.isfile(CACHE_FOLDER / app_data):
-        cache_file_callback(None, None, cache.File(CACHE_FOLDER / app_data))
+        cache_file_callback(None, None, File(CACHE_FOLDER / app_data))
 
 def cache_file_callback(sender, app_data, user_data):
     if user_data.type == "": return
 
-    global aud
+    global aud, aud_buffer
     global curr
     curr = user_data
 
@@ -85,13 +149,10 @@ def cache_file_callback(sender, app_data, user_data):
 
         dpg.set_value("__asset_tex", np.frombuffer(resized_im.tobytes(), dtype=np.uint8) / 255.0)
     if curr.type == "ogg":
-        with open(aud_path, 'wb') as file:
-            file.write(curr.get_data())
-
-        aud = openal.oalOpen(aud_path)
-        file = pyogg.VorbisFile(aud_path)
-        duration = file.buffer_length / file.frequency / file.channels / 2
-        dpg.set_value("audio_duration", f"duration: {duration:.3f}s")
+        orig_data = curr.data.getvalue()
+        file = OggVorbis(io.BytesIO(orig_data))
+        aud = m.Sound(io.BytesIO(orig_data))
+        dpg.set_value("audio_duration", f"duration: {file.info.length:.3f}s")
 
     dpg.configure_item("asset_viewer", width=-1, height=-1)
 
@@ -168,7 +229,7 @@ def populate_cache_files():
     cache_hashlist = os.listdir(CACHE_FOLDER)
     cache_files.clear()
     for file in os.listdir(CACHE_FOLDER):
-        f = cache.File(CACHE_FOLDER / file)
+        f = File(CACHE_FOLDER / file)
         cache_files.append(f)
     cache_files.sort(key=lambda obj: obj.name)
 
@@ -291,7 +352,7 @@ with dpg.window(label="asset viewer: <none>", tag="asset_viewer", height=-1, wid
     dpg.add_text("currently viewing: <none>", tag="status_text", payload_type="hash", drop_callback=cache_file_drop_callback)
 
     with dpg.group(tag="audio", show=False):
-        dpg.add_slider_float(label='volume', callback=lambda s, a: aud.set_gain(a), min_value=0, max_value=1, clamped=True, default_value=1, tag="audio_volume")
+        dpg.add_slider_float(label='volume', callback=lambda s, a: aud.set_volume(a), min_value=0, max_value=1, clamped=True, default_value=1, tag="audio_volume")
         with dpg.group(horizontal=True):
             dpg.add_button(label="play", callback=lambda x: aud.play())
             dpg.add_button(label="stop", callback=lambda x: aud.stop())

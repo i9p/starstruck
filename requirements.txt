@@ -5,6 +5,3 @@ numpy
 requests
 PyOpenAL
 PyOgg
-
-# required for windows
-python-magic-bin
