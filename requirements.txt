@@ -3,5 +3,5 @@ python-magic
 pillow
 numpy
 requests
-PyOpenAL
-PyOgg
+mutagen
+pygame
