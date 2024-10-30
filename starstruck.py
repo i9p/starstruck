@@ -247,7 +247,7 @@ def process_element(k, element, parent, path=None):
         if k == 'version':
             with dpg.group(horizontal=True, parent=parent) as g:
                 dpg.add_text(k + ": " + element)
-                dpg.add_button(label="rescan", callback=rescan_fleasion_callback, parent=g)
+                dpg.add_button(label="rescan", callback=download_fleasion_callback, parent=g)
         else:
             add_value_to_hash_data(element, "/".join(path[-2:]))
             dpg.add_text(k + ": " + element, color=in_hashlist(element), parent=parent)
@@ -326,7 +326,41 @@ with dpg.window(label="cache list", width=800, height=500, no_close=True):
             user_data=_cache_table_id, callback=lambda s, a, u: dpg.set_value(u, dpg.get_value(s)), 
             drop_callback=lambda s, a: dpg.set_value(s, a))
 
-    with dpg.table(header_row=True, no_host_extendX=True, delay_search=True, clipper=True,
+    def _sort_callback(sender, sort_specs):
+
+        # sort_specs scenarios:
+        #   1. no sorting -> sort_specs == None
+        #   2. single sorting -> sort_specs == [[column_id, direction]]
+        #   3. multi sorting -> sort_specs == [[column_id, direction], [column_id, direction], ...]
+        #
+        # notes:
+        #   1. direction is ascending if == 1
+        #   2. direction is ascending if == -1
+
+        # no sorting case
+        if sort_specs is None: return
+
+        rows = dpg.get_item_children(sender, 1)
+
+        # create a list that can be sorted based on first cell
+        # value, keeping track of row and value used to sort
+        sortable_list = []
+        for row in rows:
+            sortable_list.append([row, dpg.get_item_user_data(row)[0]])
+
+        def _sorter(e):
+            return e[1]
+
+        sortable_list.sort(key=_sorter, reverse=sort_specs[0][1] < 0)
+
+        # create list of just sorted row ids
+        new_order = []
+        for pair in sortable_list:
+            new_order.append(pair[0])
+        
+        dpg.reorder_items(sender, 1, new_order)
+
+    with dpg.table(header_row=True, no_host_extendX=True, delay_search=True, clipper=True,# sortable=True, callback=_sort_callback,
                 borders_innerH=True, borders_outerH=True, borders_innerV=True,
                 borders_outerV=True, context_menu_in_body=True, row_background=True,
                 policy=dpg.mvTable_SizingFixedFit, height=-1, scrollY=True, tag=_cache_table_id):
@@ -339,7 +373,7 @@ with dpg.window(label="cache list", width=800, height=500, no_close=True):
 
         for f in cache_files:
             data_list = [f.name, f.mtime, f.type, 'empty' if os.path.getsize(f.path) == 91 else str(os.path.getsize(f.path)), ", ".join(hash_data.get(f.name, ['nodesc']))]
-            with dpg.table_row(filter_key=' '.join(data_list)):
+            with dpg.table_row(filter_key=' '.join(data_list), user_data=data_list):
                 dpg.add_button(label=f.name, user_data=f, callback=cache_file_callback)
                 with dpg.drag_payload(parent=dpg.last_item(), drag_data=f.name, payload_type="hash"):
                     dpg.add_text(f.name)
