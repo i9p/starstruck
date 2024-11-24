@@ -24,7 +24,7 @@ from mutagen.oggvorbis import OggVorbis
 from datetime import datetime
 from pathlib import Path
 
-VERSION = 1.6
+VERSION = 1.7
 
 TEXTURE_RESOLUTION = 256
 ASSET_URL = 'https://raw.githubusercontent.com/CroppingFlea479/Fleasion/main/assets.json'
@@ -291,7 +291,7 @@ dpg.create_viewport(title=f'starstruck v{VERSION}', width=1200, height=800)
 # ┏━╸╻ ╻╻   ╻ ╻╻┏┓╻╺┳┓┏━┓╻ ╻┏━┓
 # ┃╺┓┃ ┃┃   ┃╻┃┃┃┗┫ ┃┃┃ ┃┃╻┃┗━┓
 # ┗━┛┗━┛╹   ┗┻┛╹╹ ╹╺┻┛┗━┛┗┻┛┗━┛
-with dpg.window(label="cache list", width=800, height=500, no_close=True):
+with dpg.window(label="cache list", width=800, height=500, no_close=True, collapsed=True, pos=(10, 10)):
     dpg.add_text(f"LAUNCHING MY TECH LIKE IM FUCKING APPLE BITCH #SAVEPFMOVEMENT ({len(cache_files)} found)", tag="cachelist_status")
     dpg.add_text(str(CACHE_FOLDER), label="cache folder", show_label=True)
 
@@ -400,7 +400,7 @@ with dpg.window(label="cache list", width=800, height=500, no_close=True):
 
         populate_cache_table(cache_files)
 
-with dpg.window(label="asset viewer: <none>", tag="asset_viewer", height=-1, width=200, no_close=True, no_resize=True):
+with dpg.window(label="asset viewer: <none>", tag="asset_viewer", height=-1, width=200, no_close=True, no_resize=True, collapsed=True, pos=(10, 50)):
     dpg.add_text("currently viewing: <none>", tag="status_text", payload_type="hash", drop_callback=cache_file_drop_callback)
 
     with dpg.group(tag="audio", show=False):
@@ -420,7 +420,7 @@ with dpg.window(label="asset viewer: <none>", tag="asset_viewer", height=-1, wid
             dpg.add_button(label="export", callback=export_callback)
             dpg.add_text('', tag="export_status")
 
-with dpg.window(label="fleasion asset library UNSCANNED", tag="fleasion_asset_library", width=500, height=300, no_close=True):
+with dpg.window(label="fleasion asset library UNSCANNED", tag="fleasion_asset_library", width=500, height=300, no_close=True, collapsed=True, pos=(10, 90)):
     dpg.add_text("scans for hashes in cache folder, green if found, red if not found.")
     dpg.add_button(label="download & scan", callback=download_fleasion_callback)
 
@@ -484,7 +484,7 @@ def validate_mods_callback():
     
     return regex_valid
 
-with dpg.window(label="the modificationator", width=650, height=300, no_close=True):
+with dpg.window(label="the modificationator", width=650, height=300, no_close=True, collapsed=True, pos=(10, 130)):
     with dpg.collapsing_header(label="modifications", default_open=True):
         with dpg.group(horizontal=True, tag="add_mods"):
             dpg.add_button(label="add replacement", user_data=('replace', '', ''), callback=add_mod_callback)
