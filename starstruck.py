@@ -228,7 +228,7 @@ def populate_cache_files():
     global cache_hashlist
     cache_hashlist = os.listdir(CACHE_FOLDER)
     cache_files.clear()
-    for file in os.listdir(CACHE_FOLDER):
+    for file in cache_hashlist:
         f = File(CACHE_FOLDER / file)
         cache_files.append(f)
     cache_files.sort(key=lambda obj: obj.name)
@@ -298,36 +298,54 @@ with dpg.window(label="cache list", width=800, height=500, no_close=True):
     _cache_controls_id = dpg.generate_uuid()
     _cache_table_id = dpg.generate_uuid()
 
-    def rescan_cache_folder_callback():
-        global cache_files
-        global cache_hashlist
-        for tag in dpg.get_item_children(_cache_table_id)[1]:
-            dpg.delete_item(tag)
+    def format_number(num):
+        if num < 1000:
+            return str(num)
+        elif num < 1_000_000:
+            return f"{num / 1000:.2f}k"
+        elif num < 1_000_000_000:
+            return f"{num / 1_000_000:.2f}M"
+        else:
+            return f"{num / 1_000_000_000:.2f}B"
 
-        populate_cache_files()
-
-        dpg.set_value("cachelist_status", f"LAUNCHING MY TECH LIKE IM FUCKING APPLE BITCH #SAVEPFMOVEMENT ({len(cache_files)} found)")
-
-        for f in cache_files:
-            data_list = [f.name, f.mtime, f.type, 'empty' if os.path.getsize(f.path) == 91 else str(os.path.getsize(f.path)), ", ".join(hash_data.get(f.name, ['nodesc']))]
+    def populate_cache_table(files):
+        for f in files:
+            fsize = os.path.getsize(f.path)
+            data_list = [f.name, f.mtime, f.type, 'empty' if fsize == 91 else str(fsize), ", ".join(hash_data.get(f.name, ['nodesc']))]
             with dpg.table_row(filter_key=' '.join(data_list), parent=_cache_table_id):
                 dpg.add_button(label=f.name, user_data=f, callback=cache_file_callback)
                 with dpg.drag_payload(parent=dpg.last_item(), drag_data=f.name, payload_type="hash"):
                     dpg.add_text(f.name)
                 dpg.add_text(f.mtime)
                 dpg.add_text(f.type)
-                dpg.add_text(os.path.getsize(f.path))
+                dpg.add_text(format_number(fsize))
                 dpg.add_text(", ".join(hash_data.get(f.name, [])))
+
+    def rescan_cache_folder_callback():
+        global cache_files
+        global cache_hashlist
+
+        populate_cache_files()
+
+        dpg.set_value("cachelist_status", f"LAUNCHING MY TECH LIKE IM FUCKING APPLE BITCH #SAVEPFMOVEMENT ({len(cache_files)} found)")
+
+        dpg.delete_item(_cache_table_id, children_only=True)
+        dpg.add_table_column(label="hash", tag="hash_col", parent=_cache_table_id)
+        dpg.add_table_column(label="last modified", tag="mtime_col", parent=_cache_table_id)
+        dpg.add_table_column(label="type", tag="type_col", parent=_cache_table_id)
+        dpg.add_table_column(label="size", tag="size_col", parent=_cache_table_id)
+        dpg.add_table_column(label="desc", tag="desc_col", parent=_cache_table_id)
+
+        populate_cache_table(cache_files)
 
     dpg.add_text('-empty to hide empty files, -nodesc to hide files without a description')
     with dpg.group(horizontal=True, tag=_cache_controls_id):
-        dpg.add_button(label="rescan (SLOW!)", callback=rescan_cache_folder_callback)
+        dpg.add_button(label="rescan", callback=rescan_cache_folder_callback)
         dpg.add_input_text(label="filter", payload_type="hash", 
             user_data=_cache_table_id, callback=lambda s, a, u: dpg.set_value(u, dpg.get_value(s)), 
             drop_callback=lambda s, a: dpg.set_value(s, a))
 
     def _sort_callback(sender, sort_specs):
-
         # sort_specs scenarios:
         #   1. no sorting -> sort_specs == None
         #   2. single sorting -> sort_specs == [[column_id, direction]]
@@ -338,32 +356,41 @@ with dpg.window(label="cache list", width=800, height=500, no_close=True):
         #   2. direction is ascending if == -1
 
         # no sorting case
+        _sorters = {
+            'hash': lambda obj: obj.name,
+            'last modified': lambda obj: obj.mtime,
+            'type': lambda obj: obj.type,
+            'size': lambda obj: os.path.getsize(obj.path),
+            'desc': lambda obj: ", ".join(hash_data.get(obj.name, []))
+        }
+
         if sort_specs is None: return
-
-        rows = dpg.get_item_children(sender, 1)
-
-        # create a list that can be sorted based on first cell
-        # value, keeping track of row and value used to sort
-        sortable_list = []
-        for row in rows:
-            sortable_list.append([row, dpg.get_item_user_data(row)[0]])
+        print(sender, sort_specs )
+        try:
+            sort_by = dpg.get_item_label(sort_specs[0][0])
+        except SystemError as e:
+            print(f'GATED: {e}')
+            return
 
         def _sorter(e):
-            return e[1]
+            return _sorters[sort_by](e)
 
-        sortable_list.sort(key=_sorter, reverse=sort_specs[0][1] < 0)
+        sorted_files = cache_files
+        sorted_files.sort(key=_sorter, reverse=sort_specs[0][1] < 0)
 
-        # create list of just sorted row ids
-        new_order = []
-        for pair in sortable_list:
-            new_order.append(pair[0])
-        
-        dpg.reorder_items(sender, 1, new_order)
+        dpg.delete_item(_cache_table_id, children_only=True)
+        dpg.add_table_column(label="hash", tag="hash_col", parent=_cache_table_id)
+        dpg.add_table_column(label="last modified", tag="mtime_col", parent=_cache_table_id)
+        dpg.add_table_column(label="type", tag="type_col", parent=_cache_table_id)
+        dpg.add_table_column(label="size", tag="size_col", parent=_cache_table_id)
+        dpg.add_table_column(label="desc", tag="desc_col", parent=_cache_table_id)
 
-    with dpg.table(header_row=True, no_host_extendX=True, delay_search=True, clipper=True,# sortable=True, callback=_sort_callback,
+        populate_cache_table(sorted_files)
+
+    with dpg.table(header_row=True, no_host_extendX=True, delay_search=True, clipper=True, sortable=True, sort_tristate=True, callback=_sort_callback,
                 borders_innerH=True, borders_outerH=True, borders_innerV=True,
                 borders_outerV=True, context_menu_in_body=True, row_background=True,
-                policy=dpg.mvTable_SizingFixedFit, height=-1, scrollY=True, tag=_cache_table_id):
+                policy=dpg.mvTable_SizingFixedFit, height=-1, scrollX=True, scrollY=True, tag=_cache_table_id):
 
         dpg.add_table_column(label="hash", tag="hash_col")
         dpg.add_table_column(label="last modified", tag="mtime_col")
@@ -371,16 +398,7 @@ with dpg.window(label="cache list", width=800, height=500, no_close=True):
         dpg.add_table_column(label="size", tag="size_col")
         dpg.add_table_column(label="desc", tag="desc_col")
 
-        for f in cache_files:
-            data_list = [f.name, f.mtime, f.type, 'empty' if os.path.getsize(f.path) == 91 else str(os.path.getsize(f.path)), ", ".join(hash_data.get(f.name, ['nodesc']))]
-            with dpg.table_row(filter_key=' '.join(data_list), user_data=data_list):
-                dpg.add_button(label=f.name, user_data=f, callback=cache_file_callback)
-                with dpg.drag_payload(parent=dpg.last_item(), drag_data=f.name, payload_type="hash"):
-                    dpg.add_text(f.name)
-                dpg.add_text(f.mtime)
-                dpg.add_text(f.type)
-                dpg.add_text(os.path.getsize(f.path))
-                dpg.add_text(", ".join(hash_data.get(f.name, [])))
+        populate_cache_table(cache_files)
 
 with dpg.window(label="asset viewer: <none>", tag="asset_viewer", height=-1, width=200, no_close=True, no_resize=True):
     dpg.add_text("currently viewing: <none>", tag="status_text", payload_type="hash", drop_callback=cache_file_drop_callback)
