@@ -49,6 +49,8 @@ if os_name == "Windows":
     CACHE_FOLDER = Path(tempfile.gettempdir(), "Roblox", "http")
 elif os_name == "Linux":
     CACHE_FOLDER = Path.home() / Path(".var/app/org.vinegarhq.Sober/cache/sober/http")
+elif os_name == "Darwin":
+    CACHE_FOLDER = Path("/private/var/folders/cj/wpn_08s93cz3xbxg2rh3v1v80000gn/T/Roblox/http")
 else:
     logger.critical("Unsupported OS - %s", os)
     sys.exit()
